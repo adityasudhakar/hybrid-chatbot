@@ -181,7 +181,7 @@ async def on_total_sales(action: cl.Action):
         total_orders = f"{row.total_orders:,}"
         
         response = f"""
-💰 **Total Sales Report**
+💰 **Total Sales Report (All Time)**
 
 📈 Total Revenue: **{total_sales}**
 📦 Total Orders: **{total_orders}**
@@ -190,7 +190,132 @@ async def on_total_sales(action: cl.Action):
         msg.content = response
         await msg.update()
     
-    # Re-display buttons
+    # Show time period follow-up buttons
+    time_actions = [
+        cl.Action(
+            name="sales_1week",
+            value="sales_1week",
+            label="📅 Last Week",
+            description="Sales from last 7 days",
+            payload={"action": "sales_1week"}
+        ),
+        cl.Action(
+            name="sales_1month",
+            value="sales_1month",
+            label="📅 Last Month",
+            description="Sales from last 30 days",
+            payload={"action": "sales_1month"}
+        ),
+        cl.Action(
+            name="sales_6months",
+            value="sales_6months",
+            label="📅 Last 6 Months",
+            description="Sales from last 180 days",
+            payload={"action": "sales_6months"}
+        )
+    ]
+    await cl.Message(content="View sales for a specific time period:", actions=time_actions).send()
+    
+    # Also re-display main buttons
+    await send_action_buttons()
+
+@cl.action_callback("sales_1week")
+async def on_sales_1week(action: cl.Action):
+    """Handle Last Week sales button"""
+    msg = cl.Message(content="🔄 Calculating sales for last week of data...")
+    await msg.send()
+    
+    sql = f"""
+    SELECT 
+        ROUND(SUM(sale_price), 2) as total_sales,
+        COUNT(*) as total_orders
+    FROM `{PROJECT_ID}.{DATASET_ID}.order_items`
+    WHERE sale_price IS NOT NULL
+      AND created_at >= '2025-05-19'
+      AND created_at < '2025-05-26'
+    """
+    
+    results = query_bigquery(sql)
+    
+    if isinstance(results, str):
+        msg.content = f"❌ {results}"
+    else:
+        row = results[0]
+        response = f"""
+📅 **Sales Report - Week of May 19-25, 2025**
+
+📈 Total Revenue: **${row.total_sales:,.2f}**
+📦 Total Orders: **{row.total_orders:,}**
+        """
+        msg.content = response
+    
+    await msg.update()
+    await send_action_buttons()
+
+@cl.action_callback("sales_1month")
+async def on_sales_1month(action: cl.Action):
+    """Handle Last Month sales button"""
+    msg = cl.Message(content="🔄 Calculating sales for last month of data...")
+    await msg.send()
+    
+    sql = f"""
+    SELECT 
+        ROUND(SUM(sale_price), 2) as total_sales,
+        COUNT(*) as total_orders
+    FROM `{PROJECT_ID}.{DATASET_ID}.order_items`
+    WHERE sale_price IS NOT NULL
+      AND created_at >= '2025-04-26'
+      AND created_at < '2025-05-26'
+    """
+    
+    results = query_bigquery(sql)
+    
+    if isinstance(results, str):
+        msg.content = f"❌ {results}"
+    else:
+        row = results[0]
+        response = f"""
+📅 **Sales Report - April 26 - May 25, 2025**
+
+📈 Total Revenue: **${row.total_sales:,.2f}**
+📦 Total Orders: **{row.total_orders:,}**
+        """
+        msg.content = response
+    
+    await msg.update()
+    await send_action_buttons()
+
+@cl.action_callback("sales_6months")
+async def on_sales_6months(action: cl.Action):
+    """Handle Last 6 Months sales button"""
+    msg = cl.Message(content="🔄 Calculating sales for last 6 months of data...")
+    await msg.send()
+    
+    sql = f"""
+    SELECT 
+        ROUND(SUM(sale_price), 2) as total_sales,
+        COUNT(*) as total_orders
+    FROM `{PROJECT_ID}.{DATASET_ID}.order_items`
+    WHERE sale_price IS NOT NULL
+      AND created_at >= '2024-11-26'
+      AND created_at < '2025-05-26'
+    """
+    
+    results = query_bigquery(sql)
+    
+    if isinstance(results, str):
+        msg.content = f"❌ {results}"
+    else:
+        row = results[0]
+        response = f"""
+📅 **Sales Report - Nov 2024 - May 2025 (6 months)**
+
+📈 Total Revenue: **${row.total_sales:,.2f}**
+📦 Total Orders: **{row.total_orders:,}**
+        """
+        msg.content = response
+    
+    await msg.update()
     await send_action_buttons()
 
 @cl.action_callback("recent_orders")
