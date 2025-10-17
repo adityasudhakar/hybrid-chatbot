@@ -5,9 +5,13 @@ import requests
 import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Set up BigQuery client
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "service_account.json"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
 client = bigquery.Client()
 
 # BigQuery configuration
@@ -15,10 +19,10 @@ PROJECT_ID = "thelook-459020"
 DATASET_ID = "thelook"
 
 # Vanna configuration
-VANNA_API_KEY = "vn-96862437e7034ebeb1082c45e0181caf"
+VANNA_API_KEY = os.getenv("VANNA_API_KEY")
 VANNA_API_URL = "https://app.vanna.ai/api/v2/chat_sse"
-VANNA_AGENT_ID = "look-service-account"
-VANNA_USER_EMAIL = "adi@vanna.ai"
+VANNA_AGENT_ID = os.getenv("VANNA_AGENT_ID")
+VANNA_USER_EMAIL = os.getenv("VANNA_USER_EMAIL")
 
 # Button configurations
 BUTTONS = [
@@ -210,7 +214,7 @@ async def main(message: cl.Message):
     """Handle text input for natural language queries via Vanna"""
     
     # Show thinking message
-    thinking_msg = cl.Message(content="🤔 This might take a minute. I need to confirm my work's accurate. Grab a coffee and check back in...")
+    thinking_msg = cl.Message(content="🤔 Processing your question with AI...")
     await thinking_msg.send()
     
     # Query Vanna in a separate thread to avoid blocking the async event loop

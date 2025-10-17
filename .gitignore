@@ -22,4 +22,4 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
-*.swp
+*.swp.env
