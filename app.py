@@ -72,65 +72,6 @@ def query_bigquery(sql):
     except Exception as e:
         return f"Error: {str(e)}"
 
-def query_vanna(user_message):
-    """Query Vanna AI for natural language to SQL conversion"""
-    headers = {
-        "Content-Type": "application/json",
-        "VANNA-API-KEY": VANNA_API_KEY
-    }
-    
-    payload = {
-        "message": user_message,
-        "user_email": VANNA_USER_EMAIL,
-        "agent_id": VANNA_AGENT_ID,
-        "acceptable_responses": ["text", "dataframe"]
-    }
-    
-    try:
-        response = requests.post(
-            VANNA_API_URL,
-            headers=headers,
-            json=payload,
-            stream=True
-        )
-        
-        # Parse SSE stream
-        final_response = ""
-        sql_query = None
-        dataframe_data = None
-        
-        for line in response.iter_lines():
-            if line:
-                line_str = line.decode('utf-8')
-                if line_str.startswith('data: '):
-                    data_str = line_str[6:]  # Remove 'data: ' prefix
-                    try:
-                        data = json.loads(data_str)
-                        
-                        # Only capture the final AI message
-                        if data.get('type') == 'text' and data.get('semantic_type') == 'final_ai_message':
-                            final_response = data.get('text', '')
-                        
-                        # Extract SQL query if present
-                        if 'sql' in data:
-                            sql_query = data['sql']
-                        
-                        # Extract dataframe from json_table format
-                        if data.get('type') == 'dataframe' and 'json_table' in data:
-                            dataframe_data = data['json_table']['data']
-                            
-                    except json.JSONDecodeError:
-                        continue
-        
-        return {
-            "response": final_response,
-            "sql": sql_query,
-            "dataframe": dataframe_data
-        }
-        
-    except Exception as e:
-        return {"error": str(e)}
-
 @cl.on_chat_start
 async def start():
     """Initialize the chat with welcome message and buttons"""
@@ -350,26 +291,78 @@ async def main(message: cl.Message):
     """Handle text input for natural language queries via Vanna"""
     
     # Show thinking message
-    thinking_msg = cl.Message(content="🤔 Processing your question with AI...")
-    await thinking_msg.send()
+    await cl.Message(content="🤔 Processing your question with AI...").send()
     
-    # Query Vanna in a separate thread to avoid blocking the async event loop
+    # Create an async queue to communicate between threads
+    import queue
+    msg_queue = queue.Queue()
+    
+    # Stream Vanna responses in a thread
+    def get_vanna_stream():
+        response = requests.post(
+            VANNA_API_URL,
+            headers={
+                "Content-Type": "application/json",
+                "VANNA-API-KEY": VANNA_API_KEY
+            },
+            json={
+                "message": message.content,
+                "user_email": VANNA_USER_EMAIL,
+                "agent_id": VANNA_AGENT_ID,
+                "acceptable_responses": ["text", "dataframe"]
+            },
+            stream=True
+        )
+        
+        for line in response.iter_lines():
+            if line:
+                line_str = line.decode('utf-8')
+                if line_str.startswith('data: '):
+                    data_str = line_str[6:]
+                    try:
+                        data = json.loads(data_str)
+                        
+                        # Send intermediate messages to queue
+                        if data.get('type') == 'text' and data.get('semantic_type') == 'intermediate_ai_message':
+                            msg_queue.put(('intermediate', data.get('text', '')))
+                        
+                        # Send final response to queue
+                        if data.get('type') == 'text' and data.get('semantic_type') == 'final_ai_message':
+                            msg_queue.put(('final', data.get('text', '')))
+                            
+                    except json.JSONDecodeError:
+                        continue
+        
+        # Signal completion
+        msg_queue.put(('done', None))
+    
+    # Start the Vanna thread
     loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor() as executor:
-        vanna_result = await loop.run_in_executor(executor, query_vanna, message.content)
+    executor = ThreadPoolExecutor()
+    loop.run_in_executor(executor, get_vanna_stream)
     
-    if "error" in vanna_result:
-        thinking_msg.content = f"❌ Error: {vanna_result['error']}"
-        await thinking_msg.update()
-        return
+    # Process messages as they arrive
+    final_text = None
+    while True:
+        try:
+            # Check queue with timeout
+            msg_type, text = await loop.run_in_executor(executor, msg_queue.get, True, 0.1)
+            
+            if msg_type == 'done':
+                break
+            elif msg_type == 'intermediate':
+                await cl.Message(content=f"💭 {text}").send()
+            elif msg_type == 'final':
+                final_text = text
+                
+        except queue.Empty:
+            continue
     
-    # Update with the AI response
-    if vanna_result.get("response"):
-        thinking_msg.content = vanna_result["response"]
-        await thinking_msg.update()
+    # Display final answer
+    if final_text:
+        await cl.Message(content=f"✅ **Final Answer:**\n\n{final_text}").send()
     else:
-        thinking_msg.content = "No response received from AI. Please try again."
-        await thinking_msg.update()
+        await cl.Message(content="No response received from AI. Please try again.").send()
     
     # Re-display buttons
     await send_action_buttons()
