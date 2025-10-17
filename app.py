@@ -11,7 +11,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Set up BigQuery client
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
+# Check if GOOGLE_CREDENTIALS env var exists (for Railway deployment)
+if os.getenv("GOOGLE_CREDENTIALS"):
+    # Write credentials to temp file
+    import tempfile
+    credentials_path = os.path.join(tempfile.gettempdir(), "credentials.json")
+    with open(credentials_path, 'w') as f:
+        f.write(os.getenv("GOOGLE_CREDENTIALS"))
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+else:
+    # Use local service account file
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
+
 client = bigquery.Client()
 
 # BigQuery configuration
