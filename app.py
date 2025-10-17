@@ -20,6 +20,34 @@ VANNA_API_URL = "https://app.vanna.ai/api/v2/chat_sse"
 VANNA_AGENT_ID = "look-service-account"
 VANNA_USER_EMAIL = "adi@vanna.ai"
 
+# Button configurations
+BUTTONS = [
+    {
+        "name": "total_sales",
+        "label": "💰 Total Sales",
+        "description": "View total revenue and order count"
+    },
+    {
+        "name": "recent_orders",
+        "label": "📦 Recent Orders",
+        "description": "View the last 10 orders"
+    }
+]
+
+async def send_action_buttons():
+    """Helper function to send action buttons"""
+    actions = [
+        cl.Action(
+            name=btn["name"],
+            value=btn["name"],
+            label=btn["label"],
+            description=btn["description"],
+            payload={"action": btn["name"]}
+        )
+        for btn in BUTTONS
+    ]
+    await cl.Message(content="What else would you like to know?", actions=actions).send()
+
 def query_bigquery(sql):
     """Execute a BigQuery query and return results"""
     try:
@@ -87,32 +115,23 @@ def query_vanna(user_message):
         
     except Exception as e:
         return {"error": str(e)}
-    """Execute a BigQuery query and return results"""
-    try:
-        query_job = client.query(sql)
-        results = query_job.result()
-        return list(results)
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 @cl.on_chat_start
 async def start():
     """Initialize the chat with welcome message and buttons"""
-    
-    # Create action buttons
     actions = [
         cl.Action(
-            name="total_sales",
-            value="total_sales",
-            label="📊 Total Sales",
-            description="Get total sales amount",
-            payload={"action": "total_sales"}
+            name=btn["name"],
+            value=btn["name"],
+            label=btn["label"],
+            description=btn["description"],
+            payload={"action": btn["name"]}
         )
+        for btn in BUTTONS
     ]
     
-    # Send welcome message with buttons
     await cl.Message(
-        content="👋 Welcome to TheLook E-commerce Analytics!\n\nClick a button below to get insights from your data:",
+        content="👋 **Welcome to TheLook E-commerce Analytics!**\n\nClick a button below to get instant insights, or type any question about your data:",
         actions=actions
     ).send()
 
@@ -156,24 +175,42 @@ async def on_total_sales(action: cl.Action):
         msg.content = response
         await msg.update()
     
-    # Re-display buttons for next query
-    actions = [
-        cl.Action(
-            name="total_sales",
-            value="total_sales", 
-            label="📊 Total Sales",
-            description="Get total sales amount",
-            payload={"action": "total_sales"}
-        )
-    ]
-    await cl.Message(content="What else would you like to know?", actions=actions).send()
+    # Re-display buttons
+    await send_action_buttons()
+
+@cl.action_callback("recent_orders")
+async def on_recent_orders(action: cl.Action):
+    """Handle Recent Orders button click"""
+    msg = cl.Message(content="🔄 Loading recent orders...")
+    await msg.send()
+    
+    sql = f"""
+    SELECT order_id, user_id, status, num_of_item,
+           FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', created_at) as order_time
+    FROM `{PROJECT_ID}.{DATASET_ID}.orders`
+    ORDER BY created_at DESC
+    LIMIT 10
+    """
+    
+    results = query_bigquery(sql)
+    
+    if isinstance(results, str):
+        msg.content = f"❌ {results}"
+    else:
+        response = "📦 **Last 10 Orders**\n\n"
+        for row in results:
+            response += f"**Order #{row.order_id}** | {row.status} | {row.num_of_item} items | {row.order_time}\n"
+        msg.content = response
+    
+    await msg.update()
+    await send_action_buttons()
 
 @cl.on_message
 async def main(message: cl.Message):
     """Handle text input for natural language queries via Vanna"""
     
     # Show thinking message
-    thinking_msg = cl.Message(content="🤔 Processing your question with AI...")
+    thinking_msg = cl.Message(content="🤔 This might take a minute. I need to confirm my work's accurate. Grab a coffee and check back in...")
     await thinking_msg.send()
     
     # Query Vanna in a separate thread to avoid blocking the async event loop
@@ -195,13 +232,4 @@ async def main(message: cl.Message):
         await thinking_msg.update()
     
     # Re-display buttons
-    actions = [
-        cl.Action(
-            name="total_sales",
-            value="total_sales", 
-            label="📊 Total Sales",
-            description="Get total sales amount",
-            payload={"action": "total_sales"}
-        )
-    ]
-    await cl.Message(content="Ask another question or use a button:", actions=actions).send()
+    await send_action_buttons()
