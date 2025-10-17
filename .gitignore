@@ -1,0 +1,25 @@
+# Virtual environment
+venv/
+env/
+
+# Sensitive files
+service_account.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Chainlit
+.chainlit/
+.files/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
